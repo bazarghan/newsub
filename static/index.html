@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="مدیریت اشتراک وی‌پی‌ان - SubLink">
+    <title>SubLink | مدیریت اشتراک</title>
+    <link rel="stylesheet" href="/style.css">
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🔗</text></svg>">
+</head>
+<body>
+    <div class="container">
+        <!-- Landing Page -->
+        <section id="landing-page">
+            <div class="landing-logo">🔗</div>
+            <h1 class="landing-title">سابلینک</h1>
+            <p class="landing-subtitle">لینک اشتراک خود را وارد کنید تا کانفیگ‌های بهینه‌شده با آی‌پی تمیز دریافت کنید</p>
+            <div class="input-group">
+                <input
+                    type="text"
+                    id="path-input"
+                    class="input-field"
+                    placeholder="مسیر اشتراک را وارد کنید..."
+                    autocomplete="off"
+                    spellcheck="false"
+                >
+                <button id="fetch-btn" class="input-btn" title="دریافت">
+                    ←
+                </button>
+            </div>
+        </section>
+
+        <!-- Loading -->
+        <section id="loading-section">
+            <div class="loader-ring"></div>
+            <p class="loader-text">در حال دریافت اشتراک...</p>
+        </section>
+
+        <!-- Error / 404 -->
+        <section id="error-section">
+            <div class="error-card">
+                <div class="error-glow"></div>
+                <div class="error-code" id="error-code">۴۰۴</div>
+                <div class="error-icon-row">
+                    <span class="error-dot"></span>
+                    <span class="error-dot"></span>
+                    <span class="error-dot"></span>
+                </div>
+                <h2 class="error-title" id="error-title">اشتراک یافت نشد</h2>
+                <p class="error-subtitle" id="error-subtitle">اشتراک مورد نظر وجود ندارد یا منقضی شده است.</p>
+                <button id="retry-btn" class="error-retry-btn">
+                    🔄 تلاش مجدد
+                </button>
+            </div>
+        </section>
+
+        <!-- Result Page -->
+        <section id="result-page">
+            <div class="result-header">
+                <h1>📡 اشتراک شما</h1>
+                <p id="result-sub-name"></p>
+            </div>
+
+            <!-- Info Cards -->
+            <div class="info-cards">
+                <div class="info-card traffic">
+                    <div class="info-card-icon">📊</div>
+                    <div class="info-card-label">حجم باقی‌مانده</div>
+                    <div class="info-card-value" id="traffic-value">—</div>
+                </div>
+                <div class="info-card time">
+                    <div class="info-card-icon">⏳</div>
+                    <div class="info-card-label">زمان باقی‌مانده</div>
+                    <div class="info-card-value" id="time-value">—</div>
+                </div>
+            </div>
+
+            <!-- Subscription Link -->
+            <div class="sub-link-section">
+                <div class="sub-link-box">
+                    <span class="sub-link-label">🔗 لینک اشتراک</span>
+                    <span class="sub-link-url" id="sub-link-url"></span>
+                    <button class="copy-sub-btn" id="copy-sub-btn">کپی لینک</button>
+                </div>
+            </div>
+
+            <!-- Configs -->
+            <div class="configs-section">
+                <div class="section-title">
+                    ⚡ کانفیگ‌ها
+                    <span class="count-badge" id="config-count">0</span>
+                </div>
+                <div class="config-list" id="config-list"></div>
+            </div>
+
+            <!-- Copy All -->
+            <div class="copy-all-section">
+                <button class="copy-all-btn primary" id="copy-all-btn">
+                    📋 کپی همه کانفیگ‌ها
+                </button>
+                <button class="copy-all-btn" id="copy-b64-btn">
+                    🔐 کپی Base64
+                </button>
+            </div>
+        </section>
+    </div>
+
+    <!-- Toast -->
+    <div class="toast" id="toast"></div>
+
+    <script src="/app.js"></script>
+</body>
+</html>
