@@ -2,7 +2,7 @@
 """
 SubLink — V2Ray subscription link converter for 3x-ui
 Fetches base64-encoded links from 3x-ui panel, decodes them,
-replaces IPs with clean IPs, and serves a beautiful Persian UI.
+replaces IPs with clean IPs per CDN, and serves a beautiful Persian UI.
 """
 
 import base64
@@ -16,20 +16,32 @@ import urllib.error
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from pathlib import Path
 
-from config import BASE_URL, IPS_FILE, HOST, PORT
+from config import BASE_URL, CDN_DIR, HOST, PORT
 
 
-def load_clean_ips():
-    """Load clean IPs from ips.txt, one per line."""
-    ips_path = Path(__file__).parent / IPS_FILE
-    if not ips_path.exists():
+def load_cdn_configs() -> list[dict]:
+    """Load all CDN configs from cdn/*.json files.
+    
+    Each CDN config has: name, abbreviation, sni, host, ips
+    Returns list of CDN dicts, skipping invalid files.
+    """
+    cdn_path = Path(__file__).parent / CDN_DIR
+    if not cdn_path.exists():
         return []
-    ips = []
-    for line in ips_path.read_text().strip().splitlines():
-        line = line.strip()
-        if line and not line.startswith("#"):
-            ips.append(line)
-    return ips
+
+    configs = []
+    for f in sorted(cdn_path.glob("*.json")):
+        try:
+            data = json.loads(f.read_text(encoding="utf-8"))
+            # Validate required fields
+            if not isinstance(data.get("ips"), list):
+                continue
+            if not data.get("abbreviation"):
+                continue
+            configs.append(data)
+        except (json.JSONDecodeError, OSError):
+            continue
+    return configs
 
 
 def fetch_subscription(path: str) -> str:
@@ -128,19 +140,79 @@ def extract_traffic_and_time(fragment: str) -> dict:
     return info
 
 
-def build_config_with_clean_ip(parsed: dict, clean_ip: str) -> str:
-    """Build a new vless:// link with the clean IP, proper SNI, and extra params."""
+def clean_fragment(fragment: str, abbreviation: str) -> str:
+    """Clean fragment and rebuild with CDN abbreviation.
+    
+    Input:  🇸🇪 sweden-l3xacrz3zn-9.89GB📊-31D⏳
+    Output: 🇸🇪CF-9.89GB📊-31D⏳
+    """
+    decoded = urllib.parse.unquote(fragment)
+
+    # Extract flag emoji(s) at the start
+    # Flags are regional indicator pairs (U+1F1E6..U+1F1FF)
+    flags = ""
+    rest = decoded
+    i = 0
+    while i < len(decoded):
+        cp = ord(decoded[i])
+        # Regional indicator symbol range
+        if 0x1F1E6 <= cp <= 0x1F1FF:
+            flags += decoded[i]
+            i += 1
+        # Also handle variation selectors and zero-width joiners
+        elif cp in (0xFE0F, 0x200D):
+            flags += decoded[i]
+            i += 1
+        else:
+            break
+
+    # Extract traffic info
+    traffic_str = ""
+    traffic_match = re.search(r'([\d.]+)\s*(GB|MB|KB|TB)', decoded, re.IGNORECASE)
+    if traffic_match:
+        val = traffic_match.group(1)
+        unit = traffic_match.group(2).upper()
+        traffic_str = f"{val}{unit}"
+
+    # Extract time info
+    time_str = ""
+    time_match = re.search(r'(\d+)\s*D', decoded)
+    if time_match:
+        days = time_match.group(1)
+        time_str = f"{days}D"
+
+    # Build clean fragment: 🇸🇪CF-9.89GB📊-31D⏳
+    parts = [flags.rstrip(), abbreviation]
+    suffix_parts = []
+    if traffic_str:
+        suffix_parts.append(f"{traffic_str}📊")
+    if time_str:
+        suffix_parts.append(f"{time_str}⏳")
+
+    result = "".join(parts)
+    if suffix_parts:
+        result += "-" + "-".join(suffix_parts)
+
+    return urllib.parse.quote(result, safe="")
+
+
+def build_config_with_cdn(parsed: dict, clean_ip: str, cdn: dict) -> str:
+    """Build a new vless:// link with CDN-specific clean IP, SNI, host, and naming."""
     if parsed["protocol"] != "vless":
         return ""
 
     params = dict(parsed["params"])
-    host_val = params.get("host", "")
 
     # Replace address with clean IP
     address = clean_ip
-    # Set SNI = host header
-    if host_val:
-        params["sni"] = host_val
+
+    # Override host and SNI from CDN config
+    if cdn.get("host"):
+        params["host"] = cdn["host"]
+    if cdn.get("sni"):
+        params["sni"] = cdn["sni"]
+    elif cdn.get("host"):
+        params["sni"] = cdn["host"]
 
     # Add fingerprint and ALPN
     params["fp"] = "chrome"
@@ -148,21 +220,37 @@ def build_config_with_clean_ip(parsed: dict, clean_ip: str) -> str:
 
     # Build query string
     query = urllib.parse.urlencode(params, quote_via=urllib.parse.quote)
-    fragment = parsed["fragment"]
+
+    # Clean fragment with CDN abbreviation
+    fragment = clean_fragment(parsed["fragment"], cdn.get("abbreviation", ""))
 
     link = f"vless://{parsed['uuid']}@{address}:{parsed['port']}?{query}#{fragment}"
     return link
 
 
-def build_vmess_with_clean_ip(parsed: dict, clean_ip: str) -> str:
-    """Build a new vmess:// link with clean IP."""
+def build_vmess_with_cdn(parsed: dict, clean_ip: str, cdn: dict) -> str:
+    """Build a new vmess:// link with CDN-specific settings."""
     if parsed["protocol"] != "vmess":
         return ""
     data = dict(parsed["data"])
-    host_val = data.get("host", "")
     data["add"] = clean_ip
-    if host_val:
-        data["sni"] = host_val
+
+    # Override host and SNI from CDN config
+    if cdn.get("host"):
+        data["host"] = cdn["host"]
+    if cdn.get("sni"):
+        data["sni"] = cdn["sni"]
+    elif cdn.get("host"):
+        data["sni"] = cdn["host"]
+
+    # Clean the display name (ps field)
+    if data.get("ps"):
+        cleaned = clean_fragment(
+            urllib.parse.quote(data["ps"]),
+            cdn.get("abbreviation", "")
+        )
+        data["ps"] = urllib.parse.unquote(cleaned)
+
     raw = json.dumps(data, ensure_ascii=False)
     encoded = base64.b64encode(raw.encode("utf-8")).decode("utf-8")
     return f"vmess://{encoded}"
@@ -171,7 +259,7 @@ def build_vmess_with_clean_ip(parsed: dict, clean_ip: str) -> str:
 def process_subscription(raw_data: str) -> dict:
     """Process raw subscription data and return structured result."""
     links = decode_subscription(raw_data)
-    clean_ips = load_clean_ips()
+    cdn_configs = load_cdn_configs()
 
     if not links:
         return {"error": "هیچ لینکی یافت نشد", "configs": [], "info": {}}
@@ -190,25 +278,29 @@ def process_subscription(raw_data: str) -> dict:
         name = first_parsed["data"].get("ps", "")
         info = extract_traffic_and_time(urllib.parse.quote(name))
 
-    # Generate configs with clean IPs
+    # Generate configs: for each link × each CDN × each IP in that CDN
     configs = []
     for link in links:
         parsed = parse_vless_link(link)
         if parsed:
-            if clean_ips:
-                for ip in clean_ips:
-                    new_link = build_config_with_clean_ip(parsed, ip)
-                    configs.append(new_link)
+            if cdn_configs:
+                for cdn in cdn_configs:
+                    for ip in cdn.get("ips", []):
+                        new_link = build_config_with_cdn(parsed, ip, cdn)
+                        if new_link:
+                            configs.append(new_link)
             else:
                 configs.append(link)
             continue
 
         parsed = parse_vmess_link(link)
         if parsed:
-            if clean_ips:
-                for ip in clean_ips:
-                    new_link = build_vmess_with_clean_ip(parsed, ip)
-                    configs.append(new_link)
+            if cdn_configs:
+                for cdn in cdn_configs:
+                    for ip in cdn.get("ips", []):
+                        new_link = build_vmess_with_cdn(parsed, ip, cdn)
+                        if new_link:
+                            configs.append(new_link)
             else:
                 configs.append(link)
             continue
@@ -280,64 +372,66 @@ class SubLinkHandler(BaseHTTPRequestHandler):
         self.wfile.write(content)
 
     def _handle_subscription(self, sub_path: str):
-        # Check Accept header to decide JSON vs HTML
-        accept = self.headers.get("Accept", "")
-        user_agent = self.headers.get("User-Agent", "").lower()
-        is_v2ray_client = any(
-            x in user_agent
-            for x in ["v2rayng", "v2rayn", "clash", "shadowrocket", "quantumult", "surge", "hiddify", "streisand", "v2box", "nekoray"]
-        )
+        accept = self.headers.get("Accept", "") or ""
+        user_agent = (self.headers.get("User-Agent", "") or "").lower()
+
+        # Check if requesting JSON API (e.g. frontend js fetch)
+        is_json = "application/json" in accept
+
+        # Check if requesting browser HTML page
+        # Web browsers send Accept header with "text/html" and a browser user-agent
+        browser_agents = ["mozilla", "chrome", "safari", "firefox", "opera", "edge"]
+        is_browser = "text/html" in accept and any(b in user_agent for b in browser_agents)
 
         try:
             raw_data = fetch_subscription(sub_path)
         except urllib.error.HTTPError as e:
-            return self._handle_fetch_error(e.code, accept, is_v2ray_client)
+            return self._handle_fetch_error(e.code, is_json, is_browser)
         except Exception as e:
             # SSL EOF, connection refused, timeout → all mean subscription not found
-            return self._handle_fetch_error(404, accept, is_v2ray_client)
+            return self._handle_fetch_error(404, is_json, is_browser)
 
         # Check if response is empty or not valid base64/links
         if not raw_data or not raw_data.strip():
-            return self._handle_fetch_error(404, accept, is_v2ray_client)
+            return self._handle_fetch_error(404, is_json, is_browser)
 
         result = process_subscription(raw_data)
 
         # If no configs were found after processing, treat as not found
         if not result.get("configs") and not result.get("error"):
-            return self._handle_fetch_error(404, accept, is_v2ray_client)
+            return self._handle_fetch_error(404, is_json, is_browser)
 
         if result.get("error"):
-            if "application/json" in accept:
+            if is_json:
                 self._send_json({"error": result["error"], "error_type": "not_found"}, 404)
-            elif is_v2ray_client:
+            elif is_browser:
+                self._serve_file("static/index.html", "text/html")
+            else:
                 self.send_response(404)
                 self.end_headers()
-            else:
-                self._serve_file("static/index.html", "text/html")
             return
 
-        # If client is a v2ray app (not browser), return raw base64
-        if is_v2ray_client or "text/plain" in accept:
-            content = result.get("sub_b64", "")
-            self.send_response(200)
-            self.send_header("Content-Type", "text/plain; charset=utf-8")
-            self.send_header("Content-Length", str(len(content)))
-            self.send_header("Content-Disposition", "inline")
-            self.send_header("Profile-Update-Interval", "4")
-            self.send_header("Subscription-Userinfo",
-                             f"upload=0; download=0; total=0; expire=0")
-            self.end_headers()
-            self.wfile.write(content.encode("utf-8"))
-            return
-
-        if "application/json" in accept:
+        if is_json:
             self._send_json(result)
             return
 
-        # Browser: serve the HTML page (frontend will call /sub/ API)
-        self._serve_file("static/index.html", "text/html")
+        if is_browser:
+            self._serve_file("static/index.html", "text/html")
+            return
 
-    def _handle_fetch_error(self, status_code: int, accept: str, is_v2ray_client: bool):
+        # Otherwise (v2ray client, curl, wget, etc.): return raw base64 subscription
+        content = result.get("sub_b64", "")
+        self.send_response(200)
+        self.send_header("Content-Type", "text/plain; charset=utf-8")
+        self.send_header("Content-Length", str(len(content)))
+        self.send_header("Content-Disposition", "inline")
+        self.send_header("Profile-Update-Interval", "4")
+        self.send_header("Subscription-Userinfo",
+                         f"upload=0; download=0; total=0; expire=0")
+        self.end_headers()
+        self.wfile.write(content.encode("utf-8"))
+
+    def _handle_fetch_error(self, status_code: int, is_json: bool, is_browser: bool):
         """Handle upstream fetch errors with a clean 404 response."""
         error_data = {
             "error": "اشتراک یافت نشد",
@@ -345,15 +439,15 @@ class SubLinkHandler(BaseHTTPRequestHandler):
             "error_title": "۴۰۴",
             "error_subtitle": "اشتراک مورد نظر وجود ندارد یا منقضی شده است.",
         }
-        if "application/json" in accept:
+        if is_json:
             self._send_json(error_data, 404)
-        elif is_v2ray_client:
+        elif is_browser:
+            self._serve_file("static/index.html", "text/html")
+        else:
             self.send_response(404)
             self.send_header("Content-Type", "text/plain; charset=utf-8")
             self.end_headers()
             self.wfile.write("subscription not found".encode("utf-8"))
-        else:
-            self._serve_file("static/index.html", "text/html")
 
     def _send_json(self, data: dict, status: int = 200):
         body = json.dumps(data, ensure_ascii=False).encode("utf-8")
@@ -365,6 +459,10 @@ class SubLinkHandler(BaseHTTPRequestHandler):
 
 
 def main():
+    cdn_configs = load_cdn_configs()
+    total_ips = sum(len(c.get("ips", [])) for c in cdn_configs)
+    cdn_names = ", ".join(c.get("abbreviation", "?") for c in cdn_configs) or "none"
+
     server = HTTPServer((HOST, PORT), SubLinkHandler)
     print(f"""
 ╔══════════════════════════════════════════╗
@@ -372,7 +470,8 @@ def main():
 ║                                          ║
 ║   Running on http://{HOST}:{PORT}         ║
 ║   Base URL: {BASE_URL[:35]}...           ║
-║   Clean IPs: {len(load_clean_ips())} loaded               ║
+║   CDNs: {cdn_names:<33}║
+║   Total IPs: {total_ips:<28}║
 ╚══════════════════════════════════════════╝
     """)
     try:
