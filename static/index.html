@@ -64,14 +64,40 @@
             <!-- Info Cards -->
             <div class="info-cards">
                 <div class="info-card traffic">
-                    <div class="info-card-icon">📊</div>
-                    <div class="info-card-label">حجم باقی‌مانده</div>
-                    <div class="info-card-value" id="traffic-value">—</div>
+                    <div class="circle-container">
+                        <svg class="progress-ring" viewBox="0 0 100 100">
+                            <defs>
+                                <linearGradient id="gradTraffic" x1="0%" y1="0%" x2="100%" y2="0%">
+                                    <stop offset="0%" stop-color="var(--accent-emerald)" />
+                                    <stop offset="100%" stop-color="#34d399" />
+                                </linearGradient>
+                            </defs>
+                            <circle class="ring-bg" cx="50" cy="50" r="40" />
+                            <circle class="ring-progress" id="traffic-ring" cx="50" cy="50" r="40" stroke="url(#gradTraffic)" />
+                        </svg>
+                        <div class="circle-content">
+                            <span class="info-card-value" id="traffic-value">—</span>
+                            <span class="info-card-label">حجم باقی‌مانده</span>
+                        </div>
+                    </div>
                 </div>
                 <div class="info-card time">
-                    <div class="info-card-icon">⏳</div>
-                    <div class="info-card-label">زمان باقی‌مانده</div>
-                    <div class="info-card-value" id="time-value">—</div>
+                    <div class="circle-container">
+                        <svg class="progress-ring" viewBox="0 0 100 100">
+                            <defs>
+                                <linearGradient id="gradTime" x1="0%" y1="0%" x2="100%" y2="0%">
+                                    <stop offset="0%" stop-color="var(--accent-amber)" />
+                                    <stop offset="100%" stop-color="#fbbf24" />
+                                </linearGradient>
+                            </defs>
+                            <circle class="ring-bg" cx="50" cy="50" r="40" />
+                            <circle class="ring-progress" id="time-ring" cx="50" cy="50" r="40" stroke="url(#gradTime)" />
+                        </svg>
+                        <div class="circle-content">
+                            <span class="info-card-value" id="time-value">—</span>
+                            <span class="info-card-label">زمان باقی‌مانده</span>
+                        </div>
+                    </div>
                 </div>
             </div>
 

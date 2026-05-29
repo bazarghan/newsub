@@ -168,10 +168,48 @@
     function renderResult(data) {
         showSection(resultPage);
 
-        // Info
+        // Info & Circular Progress
         const info = data.info || {};
         trafficValue.textContent = info.traffic || "نامشخص";
         timeValue.textContent = info.time || "نامشخص";
+
+        const trafficRing = document.getElementById("traffic-ring");
+        const timeRing = document.getElementById("time-ring");
+        
+        setTimeout(() => {
+            const circumference = 251.2; // 2 * PI * 40
+            
+            let trafficPercent = 100;
+            if (info.traffic && info.traffic !== "نامشخص") {
+                const val = parseFloat(info.traffic);
+                if (!isNaN(val)) {
+                    // Visual heuristic: gauge fills relative to 50GB max
+                    trafficPercent = Math.min((val / 50) * 100, 100); 
+                    trafficPercent = Math.max(trafficPercent, 10);
+                }
+            } else {
+                trafficPercent = 0;
+            }
+
+            let timePercent = 100;
+            if (info.time && info.time !== "نامشخص") {
+                const val = parseInt(info.time);
+                if (!isNaN(val)) {
+                    // Visual heuristic: gauge fills relative to 30 days max
+                    timePercent = Math.min((val / 30) * 100, 100);
+                    timePercent = Math.max(timePercent, 10);
+                }
+            } else {
+                timePercent = 0;
+            }
+
+            if (trafficRing) {
+                trafficRing.style.strokeDashoffset = circumference - (trafficPercent / 100) * circumference;
+            }
+            if (timeRing) {
+                timeRing.style.strokeDashoffset = circumference - (timePercent / 100) * circumference;
+            }
+        }, 100);
 
         // Sub name
         const name = info.name ? decodeURIComponent(info.name).replace(/[📊⏳🇸🇪🇩🇪🇳🇱🇫🇮🇫🇷🇬🇧🇺🇸\d.GBMBTBKBD-]+/g, "").trim() : "";
