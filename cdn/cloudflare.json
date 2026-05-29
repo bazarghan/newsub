@@ -1,7 +1,10 @@
 {
   "name": "Cloudflare",
   "abbreviation": "CF",
-  "sni": "",
-  "host": "",
-  "ips": []
+  "sni": "se.mcraft.ir",
+  "host": "se.mcraft.ir",
+  "ips": [
+    "104.18.32.47",
+    "188.114.98.0"
+  ]
 }
